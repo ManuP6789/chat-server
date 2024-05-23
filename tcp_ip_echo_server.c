@@ -109,16 +109,9 @@ void *handle_client(void *arg) {
     char buf[BUF_SIZE];
     ssize_t numRead;
 
-    // Transfer data from connected socket back to the client until EOF
-
     while ((numRead = read(cfd, buf, BUF_SIZE)) > 0) {
-        if (write(cfd, buf, numRead) != numRead) {
-            fprintf(stderr, "partial/failed write");
-            close(cfd);
-            return NULL;
-        }
         buf[numRead] = '\0';
-        enqueue_message(cfd, buf);  
+        enqueue_message(cfd, buf); 
     }
 
     if (numRead == -1) {
@@ -162,6 +155,7 @@ void *broadcast_thread(void *arg) {
                 }
             }
         }
+        memset(msg.text, 0, sizeof(msg.text)); 
         pthread_mutex_unlock(&clients_mutex);
     }
     return NULL;
@@ -169,8 +163,13 @@ void *broadcast_thread(void *arg) {
 
 void enqueue_message(int sender_fd, const char *msg) {
     pthread_mutex_lock(&queue_mutex);
-    message_queue[queue_head].sender_fd = sender_fd;
-    strncpy(message_queue[queue_head].text, msg, BUF_SIZE);
+    message_t new_msg;
+    new_msg.sender_fd = sender_fd;
+    strncpy(new_msg.text, msg, BUF_SIZE);
+    message_queue[queue_head] = new_msg;
+    
+    message_queue[queue_head].text[strlen(msg)] = '\0'; // Ensure null-termination
+
     queue_head = (queue_head + 1) % BUF_SIZE;
     pthread_cond_signal(&queue_cond);
     pthread_mutex_unlock(&queue_mutex);

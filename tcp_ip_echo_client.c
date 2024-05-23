@@ -21,6 +21,7 @@ int main(int argc, char *argv[])
     int sfd;
     ssize_t numRead;
     char buf[BUF_SIZE];
+    pthread_t receive_thread;
 
     char username[BUF_SIZE]; // Variable to store the username
 
@@ -53,23 +54,28 @@ int main(int argc, char *argv[])
     printf("Connected to server %s on port %d\n",argv[1], PORT);
 
 
-    while ((numRead = read(STDIN_FILENO, buf, BUF_SIZE)) > 0) {
-        if (write(sfd, buf, numRead) != numRead) {
-            fprintf(stderr, "partial/failed write");
-            exit(EXIT_FAILURE);
-        }
+    if (pthread_create(&receive_thread, NULL, receive_messages, &sfd) != 0) {
+        perror("pthread_create");
+        exit(EXIT_FAILURE);
+    }
 
-        numRead = read(sfd, buf, BUF_SIZE);
-        if (numRead > 0) {
-            if (write(STDIN_FILENO, buf, numRead) != numRead) {
-                fprintf(stderr, "partial/failed write");
-                exit(EXIT_FAILURE);
-            }
-        } else if (numRead == -1) {
-            fprintf(stderr, "read");
+    // Main thread: send messages to the server
+    while (1) {
+        printf("%s: ", username); // Print username as a prompt
+        fgets(buf, BUF_SIZE, stdin); 
+        buf[strcspn(buf, "\n")] = 0;
+
+        // Prepare the message with username
+        char message[BUF_SIZE + BUF_SIZE];
+        snprintf(message, BUF_SIZE + BUF_SIZE, "%s: %s", username, buf);
+
+        // Send message to server
+        if (write(sfd, message, strlen(message)) != strlen(message)) {
+            perror("write");
             exit(EXIT_FAILURE);
         }
     }
+
 
     if (numRead == -1) {
         perror("read");
@@ -82,4 +88,28 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+void *receive_messages(void *arg) {
+    int sfd = *((int *)arg);
+    char buf[BUF_SIZE];
+    ssize_t numRead;
 
+    while ((numRead = read(sfd, buf, BUF_SIZE)) > 0) {
+        // Print message received from the server
+        if (write(STDOUT_FILENO, buf, numRead) != numRead) {
+            perror("partial/failed write");
+            exit(EXIT_FAILURE);
+        }
+        fprintf(stdout, "\n");
+
+    }
+
+    if (numRead == -1) {
+        perror("read");
+        exit(EXIT_FAILURE);
+    }
+
+    fprintf(stderr, "Server closed connection\n");
+    // Close socket
+    close(sfd);
+    exit(EXIT_SUCCESS);
+}
